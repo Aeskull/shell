@@ -71,9 +71,6 @@ fn execute_directives(directives: Vec<Directive>) -> Result<(bool, bool), String
     let mut out_stream = None;
     let mut last_child: Option<std::process::Child> = None;
     for (num, directive) in directives.iter().enumerate() {
-        if directive.cmd == "exit" {
-            return Ok((false, false));
-        }
         match directive.cmd.as_str() {
             "exit" => return Ok((false, false)),
             "cd" => return change_directory(&directive.args),
