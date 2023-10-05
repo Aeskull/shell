@@ -19,13 +19,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdin().read_line(&mut s)?;
         let directives = process_input(&s);
         match execute_directives(directives) {
-            Ok((false, _)) => break,
+            Ok(false) => break,
             Err(e) => {
                 eprintln!("{e}");
                 return_status = false;
             },
-            Ok((true, true)) => return_status = true,  // On success
-            Ok((true, false)) => return_status = false, // On error
+            Ok(true) => return_status = true,  // On success
         };
     }
     Ok(())
@@ -49,23 +48,23 @@ fn process_input(s: &str) -> Vec<Directive> {
     directives
 }
 
-fn change_directory(new_dir: &[String]) -> Result<(bool, bool), String> {
+fn change_directory(new_dir: &[String]) -> Result<bool, String> {
     if new_dir.len() > 1 {
         return Err(String::from("Invalid syntax"));
     }
     if let Err(e) = std::env::set_current_dir(&new_dir[0]) {
         return Err(format!("{e}"));
     };
-    Ok((true, true))
+    Ok(true)
 }
 
-fn execute_directives(directives: Vec<Directive>) -> Result<(bool, bool), String> {
+fn execute_directives(directives: Vec<Directive>) -> Result<bool, String> {
     let mut in_stream = None;
     let mut out_stream = None;
     let mut last_child: Option<std::process::Child> = None;
     for (num, directive) in directives.iter().enumerate() {
         match directive.cmd.as_str() {
-            "exit" => return Ok((false, false)),
+            "exit" => return Ok(false),
             "cd" => return change_directory(&directive.args),
             _ => {
                 if num != (directives.len() - 1) && directive.output_filename.is_some() {
@@ -131,7 +130,7 @@ fn execute_directives(directives: Vec<Directive>) -> Result<(bool, bool), String
     let output = last_child.take().unwrap().wait_with_output().unwrap().stdout;
     print!("{}", String::from_utf8_lossy(&output));
 
-    Ok((true, true))
+    Ok(true)
 }
 
 #[cfg(test)]
