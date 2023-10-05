@@ -3,17 +3,18 @@ use std::env::set_current_dir;
 
 type CmdFn = fn(Vec<Directive>) -> Result<(bool, bool), String>;
 
-pub const BUILT_INS: [(&'static str, CmdFn); 4] = [
+pub const BUILT_INS: [(&'static str, CmdFn); 5] = [
 	("cd", change_directory),
 	("view", view_cmds),
 	("exit", exit_term),
 	("history", view_history),
+    ("help", help),
 ];
 
+pub static mut HISTORY: Vec<String> = vec![];
+
 fn view_cmds(directives: Vec<Directive>) -> Result<(bool, bool), String> {
-    for directive in &directives[1..] {
-        dbg!(directive);
-    }
+    println!("{:#?}", &directives[1..]);
     Ok((true, true))
 }
 
@@ -33,5 +34,13 @@ fn exit_term(_: Vec<Directive>) -> Result<(bool, bool), String> {
 }
 
 fn view_history(_: Vec<Directive>) -> Result<(bool, bool), String> {
+    unsafe { println!("{HISTORY:#?}") }
 	Ok((true, true))
+}
+
+fn help(_: Vec<Directive>) -> Result<(bool, bool), String> {
+    println!("This s the CSCI-442 shell (but in rust)!\n");
+    println!("The built-in commands are:");
+    println!("  cd exit help history");
+    Ok((true, true))
 }
