@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq, Eq)]
-pub enum OutputType {
+pub enum FileOutputType {
     Append,
     Truncate,
 }
@@ -17,7 +17,7 @@ pub struct Directive {
     pub args: Vec<String>,
     pub output_filename: Option<String>,
     pub input_filename: Option<String>,
-    pub output_type: Option<OutputType>,
+    pub file_output_type: Option<FileOutputType>,
 }
 
 impl From<&str> for Directive {
@@ -26,44 +26,47 @@ impl From<&str> for Directive {
         let mut cmd = String::new();
         let mut args = vec![];
         let mut output_filename = None;
-        let mut output_type = None;
-        
+        let mut file_output_type = None;
+
         let mut token = String::new();
         let mut mode = Mode::Cmd;
         let mut have_cmd = false;
         let mut c_iter = value.chars();
 
-        let mut handle_token = |mode: &mut Mode, new_mode: Mode, tok: &mut String, have_cmd: &mut bool| {
-            if !tok.is_empty() {
-                match mode {
-                    Mode::Cmd => {
-                        cmd = tok.clone();
-                        *have_cmd = true;
-                    },
-                    Mode::Args => args.push(tok.clone()),
-                    Mode::In => input_filename = Some(tok.clone()),
-                    Mode::Out => output_filename = Some(tok.clone()),
+        let mut handle_token =
+            |mode: &mut Mode, new_mode: Mode, tok: &mut String, have_cmd: &mut bool| {
+                if !tok.is_empty() {
+                    match mode {
+                        Mode::Cmd => {
+                            cmd = tok.clone();
+                            *have_cmd = true;
+                        }
+                        Mode::Args => args.push(tok.clone()),
+                        Mode::In => input_filename = Some(tok.clone()),
+                        Mode::Out => output_filename = Some(tok.clone()),
+                    }
+                    tok.clear();
+                    if !*have_cmd {
+                        *mode = Mode::Cmd;
+                        return;
+                    }
                 }
-                tok.clear();
-                if !*have_cmd {
-                    *mode = Mode::Cmd;
-                    return;
-                }
-            }
-            *mode = new_mode;
-        };
+                *mode = new_mode;
+            };
 
         while let Some(c) = c_iter.next() {
             match c {
-                ' ' if !token.is_empty() => handle_token(&mut mode, Mode::Args, &mut token, &mut have_cmd),
+                ' ' if !token.is_empty() => {
+                    handle_token(&mut mode, Mode::Args, &mut token, &mut have_cmd)
+                }
                 '<' => handle_token(&mut mode, Mode::In, &mut token, &mut have_cmd),
                 '>' => {
                     handle_token(&mut mode, Mode::Out, &mut token, &mut have_cmd);
                     if let Some(c) = c_iter.next() {
                         if c == '>' {
-                            output_type = Some(OutputType::Append);
+                            file_output_type = Some(FileOutputType::Append);
                         } else {
-                            output_type = Some(OutputType::Truncate);
+                            file_output_type = Some(FileOutputType::Truncate);
                             if c != ' ' {
                                 token.push(c);
                             }
@@ -81,7 +84,7 @@ impl From<&str> for Directive {
             args,
             output_filename,
             input_filename,
-            output_type,
+            file_output_type,
         }
     }
 }
