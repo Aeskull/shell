@@ -2,8 +2,6 @@
 pub enum OutputType {
     Append,
     Truncate,
-    Pipe,
-    Stdout,
 }
 
 enum Mode {

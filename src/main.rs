@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[inline]
 fn get_face(b: bool) -> &'static str {
     if b {
         ":)"
@@ -41,18 +42,10 @@ fn get_face(b: bool) -> &'static str {
 
 fn process_input(s: &str) -> Vec<Directive> {
     let s = s.trim();
-    let mut directives = s
+    let directives = s
         .split("|")
         .map(|f| Directive::from(f.trim()))
         .collect::<Vec<Directive>>();
-    let pipe_len = directives.len();
-    for (num, dir) in &mut directives.iter_mut().enumerate() {
-        if dir.output_type == None && num == pipe_len - 1 {
-            dir.output_type = Some(OutputType::Stdout);
-        } else if dir.output_type == None && num < pipe_len - 1 {
-            dir.output_type = Some(OutputType::Pipe);
-        }
-    }
     directives
 }
 
