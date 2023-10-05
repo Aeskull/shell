@@ -1,9 +1,25 @@
 #[derive(Debug, PartialEq, Eq)]
+pub enum OutputType {
+    Append,
+    Truncate,
+    Pipe,
+    Stdout,
+}
+
+enum Mode {
+    Cmd,
+    In,
+    Out,
+    Args,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct Directive {
     pub cmd: String,
     pub args: Vec<String>,
     pub output_filename: Option<String>,
     pub input_filename: Option<String>,
+    pub output_type: Option<OutputType>,
 }
 
 impl From<&str> for Directive {
@@ -12,66 +28,62 @@ impl From<&str> for Directive {
         let mut cmd = String::new();
         let mut args = vec![];
         let mut output_filename = None;
+        let mut output_type = None;
+        
+        let mut token = String::new();
+        let mut mode = Mode::Cmd;
+        let mut have_cmd = false;
+        let mut c_iter = value.chars();
 
-        match &value.split(">").collect::<Vec<&str>>()[..] {
-            [first, last] => {
-                if first.contains("<") {
-                    output_filename = Some(last.trim().to_string());
-                    let splits = first.split("<").collect::<Vec<&str>>();
-                    let cmd_args = splits[0]
-                        .split_ascii_whitespace()
-                        .map(|f| f.trim().to_string())
-                        .collect::<Vec<String>>();
-                    cmd = cmd_args[0].to_ascii_lowercase().clone();
-                    args = cmd_args[1..].to_vec();
-                    input_filename = Some(splits[1].trim().to_string());
-                } else if last.contains("<") {
-                    let cmd_args = first
-                        .split_ascii_whitespace()
-                        .map(|f| f.trim().to_string())
-                        .collect::<Vec<String>>();
-                    cmd = cmd_args[0].to_ascii_lowercase().clone();
-                    args = cmd_args[1..].to_vec();
-                    let splits = last.split("<").collect::<Vec<&str>>();
-                    output_filename = Some(splits[0].trim().to_string());
-                    input_filename = Some(splits[1].trim().to_string());
-                } else {
-                    let cmd_args = first
-                        .split_ascii_whitespace()
-                        .map(|f| f.trim().to_string())
-                        .collect::<Vec<String>>();
-                    output_filename = Some(last.trim().to_string());
-                    cmd = cmd_args[0].to_ascii_lowercase().clone();
-                    args = cmd_args[1..].to_vec();
+        let mut handle_token = |mode: &mut Mode, new_mode: Mode, tok: &mut String, have_cmd: &mut bool| {
+            if !tok.is_empty() {
+                match mode {
+                    Mode::Cmd => {
+                        cmd = tok.clone();
+                        *have_cmd = true;
+                    },
+                    Mode::Args => args.push(tok.clone()),
+                    Mode::In => input_filename = Some(tok.clone()),
+                    Mode::Out => output_filename = Some(tok.clone()),
+                }
+                tok.clear();
+                if !*have_cmd {
+                    *mode = Mode::Cmd;
+                    return;
                 }
             }
-            [input] => {
-                if input.contains("<") {
-                    let splits = input.split("<").collect::<Vec<&str>>();
-                    let cmd_args = splits[0]
-                        .split_ascii_whitespace()
-                        .map(|f| f.trim().to_string())
-                        .collect::<Vec<String>>();
-                    cmd = cmd_args[0].to_ascii_lowercase().clone();
-                    args = cmd_args[1..].to_vec();
-                    input_filename = Some(splits[1].trim().to_string());
-                } else {
-                    let cmd_args = input
-                        .split_ascii_whitespace()
-                        .map(|f| f.trim().to_string())
-                        .collect::<Vec<String>>();
-                    cmd = cmd_args[0].to_ascii_lowercase().clone();
-                    args = cmd_args[1..].to_vec();
+            *mode = new_mode;
+        };
+
+        while let Some(c) = c_iter.next() {
+            match c {
+                ' ' if !token.is_empty() => handle_token(&mut mode, Mode::Args, &mut token, &mut have_cmd),
+                '<' => handle_token(&mut mode, Mode::In, &mut token, &mut have_cmd),
+                '>' => {
+                    handle_token(&mut mode, Mode::Out, &mut token, &mut have_cmd);
+                    if let Some(c) = c_iter.next() {
+                        if c == '>' {
+                            output_type = Some(OutputType::Append);
+                        } else {
+                            output_type = Some(OutputType::Truncate);
+                            if c != ' ' {
+                                token.push(c);
+                            }
+                        }
+                    }
                 }
+                _ if c != ' ' => token.push(c),
+                _ => {}
             }
-            _ => {}
         }
+        handle_token(&mut mode, Mode::Args, &mut token, &mut have_cmd);
 
         Self {
             cmd,
             args,
             output_filename,
             input_filename,
+            output_type,
         }
     }
 }

@@ -1,1 +1,1 @@
-print("hi from python")
+print("hopi\nbento\nochi\ntobi")

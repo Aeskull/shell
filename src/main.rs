@@ -1,103 +1,147 @@
-use directive::Directive;
-use std::io::stdin;
+use directive::{Directive, OutputType};
+use std::fs::OpenOptions;
+use std::io::{stdin, stdout, Write};
 use std::process::{Command, Stdio};
+use whoami::{username, devicename};
+use std::env::current_dir;
 
 mod directive;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut return_status = true;
+    let user = username();
+    let d_name = devicename();
     loop {
+        let path = current_dir()?;
+        print!("{user}@{d_name} {} {} ", path.display(), get_face(return_status));
+        stdout().flush().unwrap();
         let mut s = String::new();
         stdin().read_line(&mut s)?;
         let directives = process_input(&s);
         match execute_directives(directives) {
             Ok((false, _)) => break,
-            Err(e) => println!("{e:?}"),
-            Ok((true, true)) => continue, // On success
-            Ok((true, false)) => continue, // On error
+            Err(e) => {
+                eprintln!("{e}");
+                return_status = false;
+            },
+            Ok((true, true)) => return_status = true,  // On success
+            Ok((true, false)) => return_status = false, // On error
         };
     }
     Ok(())
 }
 
+fn get_face(b: bool) -> &'static str {
+    if b {
+        ":)"
+    } else {
+        ":("
+    }
+}
+
 fn process_input(s: &str) -> Vec<Directive> {
     let s = s.trim();
-    let directives = s
+    let mut directives = s
         .split("|")
         .map(|f| Directive::from(f.trim()))
         .collect::<Vec<Directive>>();
+    let pipe_len = directives.len();
+    for (num, dir) in &mut directives.iter_mut().enumerate() {
+        if dir.output_type == None && num == pipe_len - 1 {
+            dir.output_type = Some(OutputType::Stdout);
+        } else if dir.output_type == None && num < pipe_len - 1 {
+            dir.output_type = Some(OutputType::Pipe);
+        }
+    }
     directives
 }
 
-fn execute_directives(directives: Vec<Directive>) -> Result<(bool, bool), Box<dyn std::error::Error>> {
-    if directives.iter().any(|f| f.cmd == "exit") {
-        return Ok((false, false));
+fn change_directory(new_dir: &[String]) -> Result<(bool, bool), String> {
+    if new_dir.len() > 1 {
+        return Err(String::from("Invalid syntax"));
     }
-    match &directives[..] {
-        [first, middle @ .., last] => {
-            let mut first_cmd = Command::new(first.cmd.clone());
-            first_cmd.args(&first.args);
-            if let Some(ref input) = first.input_filename {
-                let f = std::fs::OpenOptions::new().read(true).open(input)?;
-                first_cmd.stdin(Stdio::from(f));
-            }
-            first_cmd.stdout(Stdio::piped());
-            let output = first_cmd.output()?;
-            if output.stderr.len() > 0 {
-                println!("{}", String::from_utf8(output.stderr)?);
-                return Ok((true, false));
-            }
+    if let Err(e) = std::env::set_current_dir(&new_dir[0]) {
+        return Err(format!("{e}"));
+    };
+    Ok((true, true))
+}
 
-            for cmd in middle {
-                let mut mid_cmd = Command::new(cmd.cmd.clone());
-                mid_cmd.args(&cmd.args);
-                mid_cmd.stdin(Stdio::piped());
-                mid_cmd.stdout(Stdio::piped());
-
-                let output = first_cmd.output()?;
-                if output.stderr.len() > 0 {
-                    println!("{}", String::from_utf8(output.stderr)?);
-                    return Ok((true, false));
+fn execute_directives(directives: Vec<Directive>) -> Result<(bool, bool), String> {
+    let mut in_stream = None;
+    let mut out_stream = None;
+    let mut last_child: Option<std::process::Child> = None;
+    for (num, directive) in directives.iter().enumerate() {
+        if directive.cmd == "exit" {
+            return Ok((false, false));
+        }
+        match directive.cmd.as_str() {
+            "exit" => return Ok((false, false)),
+            "cd" => return change_directory(&directive.args),
+            _ => {
+                if num != (directives.len() - 1) && directive.output_filename.is_some() {
+                    return Err(String::from("Specified output before the final pipe"));
                 }
+                if num != 0 && directive.input_filename.is_some() {
+                    return Err(String::from("Input specified after the first pipe"));
+                }
+        
+                if let Some(ref in_file) = directive.input_filename {
+                    let Ok(in_f) = OpenOptions::new().read(true).open(in_file) else {
+                        return Err(String::from("Unable to open input file"));
+                    };
+                    in_stream = Some(Stdio::from(in_f));
+                }
+                if let Some(ref out_file) = directive.output_filename {
+                    if let Some(OutputType::Append) = directive.output_type {
+                        let Ok(out_f) = OpenOptions::new()
+                            .write(true)
+                            .append(true)
+                            .create(true)
+                            .open(out_file)
+                        else {
+                            return Err(String::from("Unable to open output file"));
+                        };
+                        out_stream = Some(Stdio::from(out_f));
+                    } else {
+                        let Ok(out_f) = OpenOptions::new()
+                            .write(true)
+                            .truncate(true)
+                            .create(true)
+                            .open(out_file)
+                        else {
+                            return Err(String::from("Unable to open output file"));
+                        };
+                        out_stream = Some(Stdio::from(out_f));
+                    };
+                }
+        
+                let mut cmd = Command::new(&directive.cmd);
+                cmd.args(&directive.args);
+        
+                if let Some(in_f) = in_stream.take() {
+                    cmd.stdin(in_f);
+                } else if num > 0 {
+                    cmd.stdin(Stdio::from(last_child.take().unwrap().stdout.unwrap()));
+                }
+        
+                if let Some(out_f) = out_stream.take() {
+                    cmd.stdout(out_f);
+                } else if num < directives.len() - 1 {
+                    cmd.stdout(Stdio::piped());
+                }
+        
+                let child = match cmd.spawn() {
+                    Ok(c) => c,
+                    Err(e) => return Err(format!("{e}")),
+                };
+                let _ = last_child.insert(child);
             }
-
-            let mut last_cmd = Command::new(last.cmd.clone());
-            last_cmd.args(&last.args);
-            if let Some(ref output) = last.output_filename {
-                let f = std::fs::OpenOptions::new().write(true).create(true).open(output)?;
-                last_cmd.stdout(Stdio::from(f));
-            }
-            last_cmd.stdin(Stdio::piped());
-            let output = last_cmd.output()?;
-            if output.stderr.len() > 0 {
-                println!("{}", String::from_utf8(output.stderr)?);
-                return Ok((true, false));
-            } else if output.stdout.len() > 0 {
-                println!("{}", String::from_utf8(output.stdout)?);
-            }
-        },
-        [command] => {
-            let mut cmd = Command::new(command.cmd.clone());
-            dbg!(command);
-            cmd.args(&command.args);
-            if let Some(ref input) = command.input_filename {
-                let f = std::fs::OpenOptions::new().read(true).open(input)?;
-                cmd.stdin(Stdio::from(f));
-            }
-            if let Some(ref output) = command.output_filename {
-                let f = std::fs::OpenOptions::new().write(true).create(true).open(output)?;
-                cmd.stdout(Stdio::from(f));
-            }
-            let output = cmd.output()?;
-            if output.stderr.len() > 0 {
-                println!("{}", String::from_utf8(output.stderr)?);
-                return Ok((true, false));
-            } else if output.stdout.len() > 0 {
-                println!("{}", String::from_utf8(output.stdout)?);
-            }
-        },
-        _ => {}
+        }
     }
-    Ok((true, false))
+    let output = last_child.take().unwrap().wait_with_output().unwrap().stdout;
+    print!("{}", String::from_utf8_lossy(&output));
+
+    Ok((true, true))
 }
 
 #[cfg(test)]
