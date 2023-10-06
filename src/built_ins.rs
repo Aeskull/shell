@@ -3,11 +3,22 @@ use std::env::set_current_dir;
 
 type CmdFn = fn(Vec<Directive>) -> Result<(bool, bool), String>;
 
+#[cfg(target_family = "windows")]
+pub const BUILT_INS: [(&'static str, CmdFn); 6] = [
+    ("cd", change_directory),
+    ("view", view_cmds),
+    ("exit", exit_term),
+    ("history", view_history),
+    ("help", help),
+    ("ls", ls),
+];
+
+#[cfg(target_family = "unix")]
 pub const BUILT_INS: [(&'static str, CmdFn); 5] = [
-	("cd", change_directory),
-	("view", view_cmds),
-	("exit", exit_term),
-	("history", view_history),
+    ("cd", change_directory),
+    ("view", view_cmds),
+    ("exit", exit_term),
+    ("history", view_history),
     ("help", help),
 ];
 
@@ -19,7 +30,7 @@ fn view_cmds(directives: Vec<Directive>) -> Result<(bool, bool), String> {
 }
 
 fn change_directory(directives: Vec<Directive>) -> Result<(bool, bool), String> {
-	let new_dir = &directives[0].args;
+    let new_dir = &directives[0].args;
     if new_dir.len() > 1 {
         return Err(String::from("Invalid syntax"));
     }
@@ -30,17 +41,27 @@ fn change_directory(directives: Vec<Directive>) -> Result<(bool, bool), String> 
 }
 
 fn exit_term(_: Vec<Directive>) -> Result<(bool, bool), String> {
-	Ok((false, true))
+    Ok((false, true))
 }
 
 fn view_history(_: Vec<Directive>) -> Result<(bool, bool), String> {
     unsafe { println!("{HISTORY:#?}") }
-	Ok((true, true))
+    Ok((true, true))
 }
 
 fn help(_: Vec<Directive>) -> Result<(bool, bool), String> {
     println!("This s the CSCI-442 shell (but in rust)!\n");
     println!("The built-in commands are:");
-    println!("  cd exit help history");
+    let cmds = BUILT_INS
+        .iter()
+        .map(|f| f.0)
+        .collect::<Vec<&str>>()
+        .join(" ");
+    println!("  {cmds}");
+    Ok((true, true))
+}
+
+#[cfg(target_family = "windows")]
+fn ls(_: Vec<Directive>) -> Result<(bool, bool), String> {
     Ok((true, true))
 }
