@@ -1,5 +1,5 @@
 use crate::directive::Directive;
-use std::env::{set_current_dir, current_dir};
+use std::env::set_current_dir;
 
 type CmdFn = fn(Vec<Directive>) -> Result<(bool, bool), String>;
 
@@ -63,6 +63,7 @@ fn help(_: Vec<Directive>) -> Result<(bool, bool), String> {
 
 #[cfg(target_family = "windows")]
 fn ls(_: Vec<Directive>) -> Result<(bool, bool), String> {
+    use std::env::current_dir;
     if let Ok(curdir) = current_dir() {
         if let Ok(readir) = curdir.read_dir() {
             for direntry in readir {
