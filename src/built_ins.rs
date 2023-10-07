@@ -4,13 +4,14 @@ use std::env::{set_current_dir, current_dir};
 type CmdFn = fn(Vec<Directive>) -> Result<(bool, bool), String>;
 
 #[cfg(target_family = "windows")]
-pub const BUILT_INS: [(&'static str, CmdFn); 6] = [
+pub const BUILT_INS: [(&'static str, CmdFn); 7] = [
     ("cd", change_directory),
     ("view", view_cmds),
     ("exit", exit_term),
     ("history", view_history),
     ("help", help),
     ("ls", ls),
+    ("echo", echo),
 ];
 
 #[cfg(target_family = "unix")]
@@ -72,5 +73,12 @@ fn ls(_: Vec<Directive>) -> Result<(bool, bool), String> {
             }
         };
     };
+    Ok((true, true))
+}
+
+#[cfg(target_family = "windows")]
+fn echo(directives: Vec<Directive>) -> Result<(bool, bool), String> {
+    let first = &directives[0];
+    println!("{}", first.args.join(" "));
     Ok((true, true))
 }
